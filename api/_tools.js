@@ -17,7 +17,12 @@ function grade(kind, v) {
 }
 
 async function getJson(url, init) {
-  const res = await fetch(url, init);
+  let res;
+  try {
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(8000) }); // 외부 API 가 멈춰도 8초 안에 끊는다
+  } catch (e) {
+    throw new Error(e.name === "TimeoutError" ? "외부 API 응답 시간 초과" : `외부 API 연결 실패: ${e.message}`);
+  }
   if (!res.ok) {
     const e = new Error(res.status === 429 ? "외부 API 요청 한도 초과(429)" : `외부 API 오류(${res.status})`);
     e.status = res.status;

@@ -5,6 +5,7 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const MAX_STEPS = 6; // 도구 호출 왕복 상한
 const MAX_MESSAGES = 20;
 const MAX_CHARS = 2000;
+const BUDGET_MS = 24000; // Vercel maxDuration(30초) 전에 JSON 오류로 끝내기 위한 전체 예산
 
 const SYSTEM = `너는 한국 여행·나들이 추천 도우미다. 한국어로, 짧고 친근하게 답한다.
 규칙:
@@ -14,11 +15,12 @@ const SYSTEM = `너는 한국 여행·나들이 추천 도우미다. 한국어�
 - 추천은 보통 3곳 안팎, 각각 이름과 한 줄 이유를 적는다. 지역이 불분명하면 되묻는다.
 - 도구가 오류를 돌려주면 그 사실을 솔직히 알리고 가능한 범위에서 답한다.`;
 
-async function callGemini(contents) {
+async function callGemini(contents, timeoutMs) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
     {
       method: "POST",
+      signal: AbortSignal.timeout(timeoutMs),
       headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM }] },
@@ -59,12 +61,21 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: "마지막 메시지는 user 여야 합니다." });
   }
 
+  const t0 = Date.now();
   const steps = []; // 화면에 보여 줄 도구 호출 기록
   const spots = [];
   const weather = [];
   try {
     for (let i = 0; i < MAX_STEPS; i++) {
-      const data = await callGemini(contents);
+      const left = BUDGET_MS - (Date.now() - t0);
+      if (left < 4000) throw new Error("응답 시간이 너무 오래 걸려 중단했습니다. 다시 시도해 주세요.");
+      let data;
+      try {
+        data = await callGemini(contents, left);
+      } catch (e) {
+        if (e.name === "TimeoutError") throw new Error("Gemini 응답 시간 초과. 잠시 후 다시 시도해 주세요.");
+        throw e;
+      }
       const content = data.candidates?.[0]?.content;
       if (!content?.parts?.length) {
         const why = data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason || "빈 응답";
@@ -77,21 +88,24 @@ module.exports = async function handler(req, res) {
       }
 
       contents.push(content); // 모델 응답(함수 호출 포함)을 그대로 이어 붙인다
-      const responses = [];
-      for (const { functionCall: fc } of calls) {
-        let result;
-        try {
-          const fn = handlers[fc.name];
-          if (!fn) throw new Error(`알 수 없는 도구: ${fc.name}`);
-          result = await fn(fc.args || {});
-          if (fc.name === "find_spots") spots.push(...result.spots);
-          if (fc.name === "get_weather") weather.push(result);
-        } catch (e) {
-          result = { error: e.message };
-        }
-        steps.push({ tool: fc.name, args: fc.args || {}, summary: summarize(result) });
-        responses.push({ functionResponse: { name: fc.name, response: { result } } });
-      }
+      // 같은 턴의 도구 호출은 동시에 실행한다
+      const responses = await Promise.all(
+        calls.map(async ({ functionCall: fc }) => {
+          const t1 = Date.now();
+          let result;
+          try {
+            const fn = handlers[fc.name];
+            if (!fn) throw new Error(`알 수 없는 도구: ${fc.name}`);
+            result = await fn(fc.args || {});
+            if (fc.name === "find_spots") spots.push(...result.spots);
+            if (fc.name === "get_weather") weather.push(result);
+          } catch (e) {
+            result = { error: e.message };
+          }
+          steps.push({ tool: fc.name, args: fc.args || {}, summary: `${summarize(result)} (${Date.now() - t1}ms)` });
+          return { functionResponse: { name: fc.name, response: { result } } };
+        })
+      );
       contents.push({ role: "user", parts: responses });
     }
     return res.status(200).json({

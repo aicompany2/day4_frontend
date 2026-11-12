@@ -370,7 +370,9 @@ async function ask(text) {
       const args = Object.values(st.args).join(", ");
       addMsg("tool", `🔧 ${st.tool}(${args}) → ${st.summary}`);
     }
-    if (!res.ok) throw new Error(data.error || `서버 오류 (${res.status}) — Vercel에 배포된 주소에서만 동작합니다.`);
+    if (!res.ok) throw new Error(data.error || (res.status === 404 || res.status === 501
+      ? "에이전트 API가 없습니다. Vercel에 배포된 주소에서만 동작합니다."
+      : `서버 오류 (${res.status}) — 서버 응답 시간 초과일 수 있습니다. Vercel 함수 로그를 확인하세요.`));
     addMsg("msg bot", data.reply || "(답변이 비어 있습니다)");
     history.push({ role: "model", text: data.reply || "" });
     showSpots(data.spots || []);
