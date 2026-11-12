@@ -3,13 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>전국 날씨 · 미세먼지 지도</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <title>전국 3D 날씨 · 미세먼지 지도</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="card">
-    <h1>전국 날씨 · 미세먼지 지도</h1>
+    <h1>전국 3D 날씨 · 미세먼지 지도</h1>
     <form id="search-form">
       <div class="field">
         <input id="city-input" type="text" placeholder="지역 입력 (예: 서, 속, Sok)" autocomplete="off">
@@ -31,7 +30,7 @@
     </div>
 
     <div id="map"></div>
-    <p class="hint">마커(기온·날씨, 색=미세먼지)나 지도의 아무 곳을 눌러 보세요.</p>
+    <p class="hint">드래그: 회전 · 휠/핀치: 확대 · 우클릭 드래그: 이동 · 기둥 높이·색 = 선택한 미세먼지 수치 · 기둥이나 지형을 클릭해 보세요.</p>
     <p id="status" class="status" role="status"></p>
 
     <section id="weather" class="weather" hidden>
@@ -53,8 +52,14 @@
     </section>
     <p class="source">날씨·대기질: Open-Meteo (미세먼지는 측정소 실측이 아닌 CAMS 모델 값)</p>
   </main>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="regions.js"></script>
-  <script src="script.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="script.js"></script>
 </body>
 </html>

@@ -1,3 +1,6 @@
+import { KR_REGIONS } from "./regions.js";
+import { createMap3D } from "./map3d.js";
+
 const GEO_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const WEATHER_URL = "https://api.open-meteo.com/v1/forecast";
 const AIR_URL = "https://air-quality-api.open-meteo.com/v1/air-quality";
@@ -148,63 +151,51 @@ async function fetchPoints(points, wCurrent, aCurrent) {
   return { weather: [].concat(w).map((x) => x.current), air: [].concat(a).map((x) => x.current) };
 }
 
-/* ---------- 지도 ---------- */
-let map, markerLayer, selectedMarker;
-let regionData = []; // 전국 마커용 { place, w, a }
+/* ---------- 3D 지도 ---------- */
+let map3d;
+let regionData = []; // 전국 기둥용 { place, w, a }
 let metric = "pm10";
 let selectedLabel = null;
 
-function pinIcon(d, selected) {
-  const [icon] = WMO[d.w?.weather_code] || ["❓"];
-  const v = metric === "pm10" ? d.a?.pm10 : d.a?.pm2_5;
-  const gray = gradeIdx(metric, v) < 0 ? " gray" : "";
-  const t = d.w ? `${Math.round(d.w.temperature_2m)}°` : "-";
-  return L.divIcon({
-    className: "",
-    iconSize: [54, 26],
-    iconAnchor: [27, 13],
-    html: `<div class="pin${gray}${selected ? " sel" : ""}" style="background:${colorOf(metric, v)}">${icon}${t}</div>`,
-  });
-}
-
 function drawMarkers() {
-  markerLayer.clearLayers();
-  for (const d of regionData) {
-    L.marker([d.place.lat, d.place.lon], { icon: pinIcon(d, d.place.label === selectedLabel) })
-      .on("click", (e) => {
-        L.DomEvent.stopPropagation(e);
-        startWeather(d.place);
-      })
-      .bindTooltip(d.place.label.split(" (")[0])
-      .addTo(markerLayer);
-  }
+  if (!map3d) return;
+  map3d.setItems(
+    regionData.map((d) => {
+      const v = metric === "pm10" ? d.a?.pm10 : d.a?.pm2_5;
+      const [icon] = WMO[d.w?.weather_code] || ["❓"];
+      return {
+        place: d.place,
+        lat: d.place.lat,
+        lon: d.place.lon,
+        label: d.place.label,
+        name: `${d.place.label.split(" (")[0]} · ${fmt(v)}㎍/㎥ ${gradeText(metric, v)}`,
+        color: colorOf(metric, v),
+        value: Math.min(v ?? 0, 150) / 150,
+        text: `${icon}${d.w ? Math.round(d.w.temperature_2m) : "-"}°`,
+      };
+    }),
+    selectedLabel
+  );
 }
 
 async function loadRegions() {
   try {
     const places = KR_REGIONS.map(toPlace);
-    const { weather, air } = await fetchPoints(
-      places,
-      "temperature_2m,weather_code",
-      "pm10,pm2_5"
-    );
+    const { weather, air } = await fetchPoints(places, "temperature_2m,weather_code", "pm10,pm2_5");
     regionData = places.map((place, i) => ({ place, w: weather[i], a: air[i] }));
     drawMarkers();
   } catch (e) {
-    setStatus(`전국 마커를 불러오지 못했습니다: ${e.message}`, true);
+    setStatus(`전국 기둥을 불러오지 못했습니다: ${e.message}`, true);
   }
 }
 
-function initMap() {
-  map = L.map("map").setView([36.3, 127.8], 7);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "© OpenStreetMap",
-    maxZoom: 18,
-  }).addTo(map);
-  markerLayer = L.layerGroup().addTo(map);
-  map.on("click", (e) => {
-    const { lat, lng } = e.latlng;
-    startWeather({ lat, lon: lng, label: `선택 지점 (${lat.toFixed(2)}, ${lng.toFixed(2)})` });
+async function initMap() {
+  map3d = await createMap3D({
+    container: $("map"),
+    geoUrl: "data/korea-provinces.json",
+    onPickItem: (it) => startWeather(it.place),
+    onPickPoint: (lat, lon) =>
+      startWeather({ lat, lon, label: `선택 지점 (${lat.toFixed(2)}, ${lon.toFixed(2)})` }),
   });
   document.querySelectorAll('input[name="metric"]').forEach((r) =>
     r.addEventListener("change", () => { metric = r.value; drawMarkers(); })
@@ -255,10 +246,8 @@ async function load(place) {
 function startWeather(place) {
   selectedLabel = place.label;
   drawMarkers();
-  if (selectedMarker) map.removeLayer(selectedMarker);
   const isRegion = regionData.some((d) => d.place.label === place.label);
-  if (!isRegion) selectedMarker = L.circleMarker([place.lat, place.lon], { radius: 8, color: "#111", weight: 3, fillColor: "#fff", fillOpacity: 1 }).addTo(map);
-  map.panTo([place.lat, place.lon]);
+  map3d?.focus(place.lat, place.lon, !isRegion);
   load(place);
   clearInterval(timer);
   timer = setInterval(() => { current && load(current); loadRegions(); }, REFRESH_MS);
@@ -292,5 +281,7 @@ $("search-form").addEventListener("submit", async (e) => {
 });
 
 /* ---------- 시작 ---------- */
-initMap();
-loadRegions().then(() => startWeather(toPlace(KR_REGIONS[0])));
+initMap()
+  .then(loadRegions)
+  .then(() => startWeather(toPlace(KR_REGIONS[0])))
+  .catch((e) => setStatus(`3D 지도를 시작하지 못했습니다: ${e.message}`, true));
