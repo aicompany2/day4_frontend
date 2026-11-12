@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>전국 날씨 · 미세먼지 지도</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="card">
+    <h1>전국 날씨 · 미세먼지 지도</h1>
+    <form id="search-form">
+      <div class="field">
+        <input id="city-input" type="text" placeholder="지역 입력 (예: 서, 속, Sok)" autocomplete="off">
+        <ul id="suggestions" class="suggestions" hidden></ul>
+      </div>
+      <button type="submit">검색</button>
+    </form>
+
+    <div class="toolbar">
+      <span>지도 색상:</span>
+      <label><input type="radio" name="metric" value="pm10" checked> 미세먼지(PM10)</label>
+      <label><input type="radio" name="metric" value="pm25"> 초미세먼지(PM2.5)</label>
+      <span class="legend">
+        <i style="background:#2f80ed"></i>좋음
+        <i style="background:#27ae60"></i>보통
+        <i style="background:#f2994a"></i>나쁨
+        <i style="background:#eb5757"></i>매우나쁨
+      </span>
+    </div>
+
+    <div id="map"></div>
+    <p class="hint">마커(기온·날씨, 색=미세먼지)나 지도의 아무 곳을 눌러 보세요.</p>
+    <p id="status" class="status" role="status"></p>
+
+    <section id="weather" class="weather" hidden>
+      <h2 id="place"></h2>
+      <div class="main">
+        <span id="icon" class="icon"></span>
+        <span id="temp" class="temp"></span>
+      </div>
+      <p id="desc" class="desc"></p>
+      <dl class="details">
+        <div><dt>체감온도</dt><dd id="feels"></dd></div>
+        <div><dt>습도</dt><dd id="humidity"></dd></div>
+        <div><dt>풍속</dt><dd id="wind"></dd></div>
+        <div><dt>강수량</dt><dd id="precip"></dd></div>
+        <div><dt>미세먼지 PM10</dt><dd id="pm10"></dd></div>
+        <div><dt>초미세먼지 PM2.5</dt><dd id="pm25"></dd></div>
+      </dl>
+      <p id="updated" class="updated"></p>
+    </section>
+    <p class="source">날씨·대기질: Open-Meteo (미세먼지는 측정소 실측이 아닌 CAMS 모델 값)</p>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="regions.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
