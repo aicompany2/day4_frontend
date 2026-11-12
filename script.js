@@ -4,7 +4,8 @@ import { createMap3D } from "./map3d.js";
 const GEO_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const WEATHER_URL = "https://api.open-meteo.com/v1/forecast";
 const AIR_URL = "https://air-quality-api.open-meteo.com/v1/air-quality";
-const REFRESH_MS = 10 * 60 * 1000; // 10분마다 자동 갱신
+const REFRESH_MS = 10 * 60 * 1000; // 선택 지점 10분마다 갱신
+const REGION_TTL_MS = 30 * 60 * 1000; // 전국 76곳은 30분 캐시 (무료 호출 한도 절약)
 
 // WMO 날씨 코드 → [아이콘, 설명]
 const WMO = {
@@ -135,20 +136,40 @@ function setStatus(msg, isError = false) {
 
 async function fetchJson(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`요청 실패 (${res.status})`);
+  if (!res.ok) throw new Error(res.status === 429 ? "API 요청 한도 초과 (429)" : `요청 실패 (${res.status})`);
   return res.json();
 }
 
+// Open-Meteo 무료 한도(시간당 호출 수) 절약: 응답을 localStorage에 잠시 저장한다
+async function cachedJson(url, ttlMs) {
+  const key = `om:${url}`;
+  try {
+    const hit = JSON.parse(localStorage.getItem(key));
+    if (hit && Date.now() - hit.t < ttlMs) return hit.v;
+  } catch { /* 저장소 사용 불가 시 무시 */ }
+  const v = await fetchJson(url);
+  try {
+    localStorage.setItem(key, JSON.stringify({ t: Date.now(), v }));
+  } catch { /* 용량 초과 등 무시 */ }
+  return v;
+}
+
 // 좌표 여러 개를 한 번에 요청하면 배열로, 하나면 객체로 돌아오므로 항상 배열로 맞춘다
-async function fetchPoints(points, wCurrent, aCurrent) {
+// 대기질 API가 실패해도 날씨는 보여 주도록 air 는 실패 시 null 배열 + airError 를 돌려준다
+async function fetchPoints(points, wCurrent, aCurrent, ttlMs = 10 * 60 * 1000) {
   const lat = points.map((p) => p.lat).join(",");
   const lon = points.map((p) => p.lon).join(",");
   const q = `latitude=${lat}&longitude=${lon}&timezone=auto`;
-  const [w, a] = await Promise.all([
-    fetchJson(`${WEATHER_URL}?${q}&current=${wCurrent}`),
-    fetchJson(`${AIR_URL}?${q}&current=${aCurrent}`),
+  const [w, a] = await Promise.allSettled([
+    cachedJson(`${WEATHER_URL}?${q}&current=${wCurrent}`, ttlMs),
+    cachedJson(`${AIR_URL}?${q}&current=${aCurrent}`, ttlMs),
   ]);
-  return { weather: [].concat(w).map((x) => x.current), air: [].concat(a).map((x) => x.current) };
+  if (w.status === "rejected") throw w.reason;
+  const weather = [].concat(w.value).map((x) => x.current);
+  const air = a.status === "fulfilled"
+    ? [].concat(a.value).map((x) => x.current)
+    : points.map(() => null);
+  return { weather, air, airError: a.status === "rejected" ? a.reason.message : null };
 }
 
 /* ---------- 3D 지도 ---------- */
@@ -181,9 +202,12 @@ function drawMarkers() {
 async function loadRegions() {
   try {
     const places = KR_REGIONS.map(toPlace);
-    const { weather, air } = await fetchPoints(places, "temperature_2m,weather_code", "pm10,pm2_5");
+    const { weather, air, airError } = await fetchPoints(
+      places, "temperature_2m,weather_code", "pm10,pm2_5", REGION_TTL_MS
+    );
     regionData = places.map((place, i) => ({ place, w: weather[i], a: air[i] }));
     drawMarkers();
+    if (airError) setStatus(`미세먼지를 불러오지 못했습니다: ${airError}. 잠시 후 다시 시도해 주세요.`, true);
   } catch (e) {
     setStatus(`전국 기둥을 불러오지 못했습니다: ${e.message}`, true);
   }
@@ -230,14 +254,14 @@ function render(place, c, a) {
 async function load(place) {
   setStatus("불러오는 중...");
   try {
-    const { weather, air } = await fetchPoints(
+    const { weather, air, airError } = await fetchPoints(
       [place],
       "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m",
       "pm10,pm2_5"
     );
     render(place, weather[0], air[0]);
     current = place;
-    setStatus("");
+    setStatus(airError ? `미세먼지 정보 없음: ${airError}` : "", !!airError);
   } catch (e) {
     setStatus(e.message, true);
   }
@@ -250,7 +274,7 @@ function startWeather(place) {
   map3d?.focus(place.lat, place.lon, !isRegion);
   load(place);
   clearInterval(timer);
-  timer = setInterval(() => { current && load(current); loadRegions(); }, REFRESH_MS);
+  timer = setInterval(() => { current && load(current); loadRegions(); }, REFRESH_MS); // loadRegions 는 캐시 덕에 30분마다만 실제 호출
 }
 
 /* ---------- 이벤트 ---------- */
