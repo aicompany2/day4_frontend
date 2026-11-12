@@ -15,10 +15,14 @@ const SYSTEM = `너는 한국 여행·나들이 추천 도우미다. 한국어�
 - 추천은 보통 3곳 안팎, 각각 이름과 한 줄 이유를 적는다. 지역이 불분명하면 되묻는다.
 - 도구가 오류를 돌려주면 그 사실을 솔직히 알리고 가능한 범위에서 답한다.`;
 
+// Gemini 3 계열은 기본 "깊은 추론"이라 응답이 느리다 → 추론 수준을 낮춰 지연을 줄인다.
+// GEMINI_THINKING_LEVEL: minimal | low(기본) | medium | high | off(설정 안 보냄)
+const THINKING = process.env.GEMINI_THINKING_LEVEL || "low";
+
 async function callGemini(contents, timeoutMs) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
-    {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+  const send = (withThinking) =>
+    fetch(url, {
       method: "POST",
       signal: AbortSignal.timeout(timeoutMs),
       headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
@@ -27,9 +31,18 @@ async function callGemini(contents, timeoutMs) {
         contents,
         tools: [{ functionDeclarations: declarations }],
         toolConfig: { functionCallingConfig: { mode: "AUTO" } },
+        ...(withThinking && { generationConfig: { thinkingConfig: { thinkingLevel: THINKING } } }),
       }),
-    }
-  );
+    });
+
+  const t = Date.now();
+  let res = await send(THINKING !== "off");
+  if (res.status === 400 && THINKING !== "off") {
+    // 모델이 thinkingLevel 을 지원하지 않으면 설정 없이 한 번 더 시도
+    console.warn("thinkingLevel 거부됨, 설정 없이 재시도:", (await res.text()).slice(0, 200));
+    res = await send(false);
+  }
+  console.log(`gemini ${MODEL} ${res.status} ${Date.now() - t}ms`);
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Gemini 오류 ${res.status}: ${body.slice(0, 300)}`);
