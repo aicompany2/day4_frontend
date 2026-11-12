@@ -1,3 +1,4 @@
+const REGIONS = require("./_regions");
 // Gemini 가 호출하는 두 가지 도구: get_weather(실시간 날씨·미세먼지), find_spots(장소 검색)
 const WMO = {
   0: "맑음", 1: "대체로 맑음", 2: "부분적으로 흐림", 3: "흐림", 45: "안개", 48: "서리 안개",
@@ -24,7 +25,14 @@ async function getJson(url, init) {
     throw new Error(e.name === "TimeoutError" ? "외부 API 응답 시간 초과" : `외부 API 연결 실패: ${e.message}`);
   }
   if (!res.ok) {
-    const e = new Error(res.status === 429 ? "외부 API 요청 한도 초과(429)" : `외부 API 오류(${res.status})`);
+    let detail = "";
+    try {
+      const j = JSON.parse(await res.text());
+      detail = j.message || j.errorType || j.reason || j.error?.message || "";
+    } catch { /* 본문이 JSON 이 아니면 생략 */ }
+    const e = new Error(
+      res.status === 429 ? "외부 API 요청 한도 초과(429)" : `외부 API 오류(${res.status})${detail ? ": " + String(detail).slice(0, 160) : ""}`
+    );
     e.status = res.status;
     throw e;
   }
@@ -39,14 +47,23 @@ async function resolveLocation({ place, latitude, longitude }) {
     return { name: place || `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`, lat: latitude, lon: longitude };
   }
   if (!place) throw new Error("place 또는 latitude/longitude 가 필요합니다.");
+  // 1) 내장 한국 지역 목록 (카카오 키·외부 호출 없이 즉시)
+  const key = place.trim().replace(/(특별시|광역시|특별자치시|특별자치도|시)$/, "");
+  const low = place.trim().toLowerCase();
+  const hit = REGIONS.find((r) => r[0] === key) || REGIONS.find((r) => r[1].toLowerCase() === low);
+  if (hit) return { name: hit[0], lat: hit[2], lon: hit[3] };
+  // 2) 카카오 (실패해도 다음 단계로)
   if (process.env.KAKAO_REST_API_KEY) {
-    const d = await getJson(
-      `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(place)}&size=1`,
-      { headers: kakaoHeaders() }
-    );
-    const doc = d.documents?.[0];
-    if (doc) return { name: doc.place_name, lat: Number(doc.y), lon: Number(doc.x) };
+    try {
+      const d = await getJson(
+        `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(place)}&size=1`,
+        { headers: kakaoHeaders() }
+      );
+      const doc = d.documents?.[0];
+      if (doc) return { name: doc.place_name, lat: Number(doc.y), lon: Number(doc.x) };
+    } catch { /* 폴백 */ }
   }
+  // 3) Open-Meteo 지오코딩 (영문명)
   const g = await getJson(
     `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(place)}&count=1&language=ko`
   );
