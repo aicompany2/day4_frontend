@@ -57,9 +57,7 @@ button:hover { background: #1d4ed8; }
 .toolbar input { width: auto; padding: 0; }
 .legend { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: .8rem; color: #475569; }
 .legend i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-left: 6px; }
-#map { position: relative; height: 520px; border-radius: 12px; overflow: hidden; background: linear-gradient(180deg, #0b3d6e, #2b7bbf); }
-#map canvas { display: block; cursor: grab; }
-.tip3d { position: absolute; pointer-events: none; padding: 4px 8px; border-radius: 6px; background: rgba(15,23,42,.9); color: #fff; font-size: .8rem; white-space: nowrap; }
+#map { height: 460px; border-radius: 12px; }
 .hint { margin: 8px 0 0; font-size: .85rem; color: #64748b; text-align: center; }
 .source { margin: 14px 0 0; font-size: .75rem; color: #94a3b8; text-align: center; }
 .pin {
@@ -70,4 +68,21 @@ button:hover { background: #1d4ed8; }
 .pin.sel { border-color: #111; transform: scale(1.2); }
 .pin.gray { background: #9aa0a6; }
 .grade { font-size: .8rem; margin-left: 4px; }
-@media (max-width: 520px) { #map { height: 400px; } .legend { margin-left: 0; } }
+@media (max-width: 520px) { #map { height: 360px; } .legend { margin-left: 0; } }
+
+.agent { margin-top: 24px; padding-top: 18px; border-top: 1px solid #e2e8f0; }
+.agent h2 { margin: 0 0 4px; font-size: 1.15rem; }
+.agent-desc { margin: 0 0 10px; font-size: .85rem; color: #64748b; }
+.chat { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; margin-bottom: 8px; }
+.msg { padding: 10px 12px; border-radius: 12px; max-width: 92%; white-space: pre-wrap; line-height: 1.5; font-size: .95rem; }
+.msg.user { align-self: flex-end; background: #2563eb; color: #fff; }
+.msg.bot { align-self: flex-start; background: #f1f5f9; }
+.msg.err { align-self: flex-start; background: #fee2e2; color: #b91c1c; }
+.tool { align-self: flex-start; font-size: .78rem; background: #ecfdf5; color: #047857; border-radius: 999px; padding: 3px 10px; }
+.examples { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.examples .ex { padding: 5px 10px; font-size: .8rem; background: #e0ecff; color: #1d4ed8; border-radius: 999px; }
+.examples .ex:hover { background: #cfe0ff; }
+#chat-form { display: flex; gap: 8px; }
+#chat-form input { flex: 1; }
+button:disabled { opacity: .6; cursor: wait; }
+.spot-pop a { color: #2563eb; }

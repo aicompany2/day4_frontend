@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>전국 3D 날씨 · 미세먼지 지도</title>
+  <title>전국 날씨 · 미세먼지 지도</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="card">
-    <h1>전국 3D 날씨 · 미세먼지 지도</h1>
+    <h1>전국 날씨 · 미세먼지 지도</h1>
     <form id="search-form">
       <div class="field">
         <input id="city-input" type="text" placeholder="지역 입력 (예: 서, 속, Sok)" autocomplete="off">
@@ -30,7 +31,7 @@
     </div>
 
     <div id="map"></div>
-    <p class="hint">드래그: 회전 · 휠/핀치: 확대 · 우클릭 드래그: 이동 · 기둥 높이·색 = 선택한 미세먼지 수치 · 기둥이나 지형을 클릭해 보세요.</p>
+    <p class="hint">마커(기온·날씨, 색=미세먼지)나 지도의 아무 곳을 눌러 보세요.</p>
     <p id="status" class="status" role="status"></p>
 
     <section id="weather" class="weather" hidden>
@@ -50,16 +51,24 @@
       </dl>
       <p id="updated" class="updated"></p>
     </section>
+    <section class="agent">
+      <h2>🤖 AI 여행 도우미</h2>
+      <p class="agent-desc">질문하면 AI가 실시간 날씨(get_weather)와 장소 검색(find_spots) 도구를 골라 호출해 추천합니다.</p>
+      <div id="chat" class="chat" aria-live="polite"></div>
+      <div class="examples">
+        <button type="button" class="ex">이번 주말 속초 가려는데 뭐 하면 좋을까?</button>
+        <button type="button" class="ex">비 오면 갈 만한 제주 실내 명소 추천해줘</button>
+        <button type="button" class="ex">지금 부산 날씨에 맞는 카페 알려줘</button>
+      </div>
+      <form id="chat-form">
+        <input id="chat-input" type="text" placeholder="예: 서울에서 산책하기 좋은 곳 추천해줘" autocomplete="off" maxlength="500">
+        <button type="submit" id="chat-send">질문</button>
+      </form>
+    </section>
     <p class="source">날씨·대기질: Open-Meteo (미세먼지는 측정소 실측이 아닌 CAMS 모델 값)</p>
   </main>
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
-  <script type="module" src="script.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="regions.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

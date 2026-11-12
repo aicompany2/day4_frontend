@@ -1,6 +1,3 @@
-import { KR_REGIONS } from "./regions.js";
-import { createMap3D } from "./map3d.js";
-
 const GEO_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const WEATHER_URL = "https://api.open-meteo.com/v1/forecast";
 const AIR_URL = "https://air-quality-api.open-meteo.com/v1/air-quality";
@@ -172,31 +169,36 @@ async function fetchPoints(points, wCurrent, aCurrent, ttlMs = 10 * 60 * 1000) {
   return { weather, air, airError: a.status === "rejected" ? a.reason.message : null };
 }
 
-/* ---------- 3D 지도 ---------- */
-let map3d;
-let regionData = []; // 전국 기둥용 { place, w, a }
+/* ---------- 지도 ---------- */
+let map, markerLayer, selectedMarker;
+let regionData = []; // 전국 마커용 { place, w, a }
 let metric = "pm10";
 let selectedLabel = null;
 
+function pinIcon(d, selected) {
+  const [icon] = WMO[d.w?.weather_code] || ["❓"];
+  const v = metric === "pm10" ? d.a?.pm10 : d.a?.pm2_5;
+  const gray = gradeIdx(metric, v) < 0 ? " gray" : "";
+  const t = d.w ? `${Math.round(d.w.temperature_2m)}°` : "-";
+  return L.divIcon({
+    className: "",
+    iconSize: [54, 26],
+    iconAnchor: [27, 13],
+    html: `<div class="pin${gray}${selected ? " sel" : ""}" style="background:${colorOf(metric, v)}">${icon}${t}</div>`,
+  });
+}
+
 function drawMarkers() {
-  if (!map3d) return;
-  map3d.setItems(
-    regionData.map((d) => {
-      const v = metric === "pm10" ? d.a?.pm10 : d.a?.pm2_5;
-      const [icon] = WMO[d.w?.weather_code] || ["❓"];
-      return {
-        place: d.place,
-        lat: d.place.lat,
-        lon: d.place.lon,
-        label: d.place.label,
-        name: `${d.place.label.split(" (")[0]} · ${fmt(v)}㎍/㎥ ${gradeText(metric, v)}`,
-        color: colorOf(metric, v),
-        value: Math.min(v ?? 0, 150) / 150,
-        text: `${icon}${d.w ? Math.round(d.w.temperature_2m) : "-"}°`,
-      };
-    }),
-    selectedLabel
-  );
+  markerLayer.clearLayers();
+  for (const d of regionData) {
+    L.marker([d.place.lat, d.place.lon], { icon: pinIcon(d, d.place.label === selectedLabel) })
+      .on("click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        startWeather(d.place);
+      })
+      .bindTooltip(d.place.label.split(" (")[0])
+      .addTo(markerLayer);
+  }
 }
 
 async function loadRegions() {
@@ -209,17 +211,20 @@ async function loadRegions() {
     drawMarkers();
     if (airError) setStatus(`미세먼지를 불러오지 못했습니다: ${airError}. 잠시 후 다시 시도해 주세요.`, true);
   } catch (e) {
-    setStatus(`전국 기둥을 불러오지 못했습니다: ${e.message}`, true);
+    setStatus(`전국 마커를 불러오지 못했습니다: ${e.message}`, true);
   }
 }
 
-async function initMap() {
-  map3d = await createMap3D({
-    container: $("map"),
-    geoUrl: "data/korea-provinces.json",
-    onPickItem: (it) => startWeather(it.place),
-    onPickPoint: (lat, lon) =>
-      startWeather({ lat, lon, label: `선택 지점 (${lat.toFixed(2)}, ${lon.toFixed(2)})` }),
+function initMap() {
+  map = L.map("map").setView([36.3, 127.8], 7);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap",
+    maxZoom: 18,
+  }).addTo(map);
+  markerLayer = L.layerGroup().addTo(map);
+  map.on("click", (e) => {
+    const { lat, lng } = e.latlng;
+    startWeather({ lat, lon: lng, label: `선택 지점 (${lat.toFixed(2)}, ${lng.toFixed(2)})` });
   });
   document.querySelectorAll('input[name="metric"]').forEach((r) =>
     r.addEventListener("change", () => { metric = r.value; drawMarkers(); })
@@ -270,11 +275,13 @@ async function load(place) {
 function startWeather(place) {
   selectedLabel = place.label;
   drawMarkers();
+  if (selectedMarker) map.removeLayer(selectedMarker);
   const isRegion = regionData.some((d) => d.place.label === place.label);
-  map3d?.focus(place.lat, place.lon, !isRegion);
+  if (!isRegion) selectedMarker = L.circleMarker([place.lat, place.lon], { radius: 8, color: "#111", weight: 3, fillColor: "#fff", fillOpacity: 1 }).addTo(map);
+  map.panTo([place.lat, place.lon]);
   load(place);
   clearInterval(timer);
-  timer = setInterval(() => { current && load(current); loadRegions(); }, REFRESH_MS); // loadRegions 는 캐시 덕에 30분마다만 실제 호출
+  timer = setInterval(() => { current && load(current); loadRegions(); }, REFRESH_MS);
 }
 
 /* ---------- 이벤트 ---------- */
@@ -305,7 +312,84 @@ $("search-form").addEventListener("submit", async (e) => {
 });
 
 /* ---------- 시작 ---------- */
-initMap()
-  .then(loadRegions)
-  .then(() => startWeather(toPlace(KR_REGIONS[0])))
-  .catch((e) => setStatus(`3D 지도를 시작하지 못했습니다: ${e.message}`, true));
+initMap();
+loadRegions().then(() => startWeather(toPlace(KR_REGIONS[0])));
+
+/* ---------- AI 에이전트 (Gemini 함수 호출, /api/agent) ---------- */
+const history = []; // { role: "user" | "model", text }
+let spotLayer = null;
+
+function addMsg(cls, text) {
+  const el = document.createElement("div");
+  el.className = cls;
+  el.textContent = text;
+  $("chat").appendChild(el);
+  $("chat").scrollTop = $("chat").scrollHeight;
+  return el;
+}
+
+function showSpots(spots) {
+  if (spotLayer) map.removeLayer(spotLayer);
+  if (!spots.length) return;
+  spotLayer = L.layerGroup().addTo(map);
+  for (const sp of spots) {
+    const pop = document.createElement("div");
+    pop.className = "spot-pop";
+    const b = document.createElement("b");
+    b.textContent = sp.name;
+    pop.append(b, document.createElement("br"), sp.address || "");
+    if (/^https?:\/\//.test(sp.url || "")) {
+      const a = document.createElement("a");
+      a.href = sp.url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = " 카카오맵";
+      pop.append(document.createElement("br"), a);
+    }
+    L.marker([sp.latitude, sp.longitude]).bindPopup(pop).addTo(spotLayer);
+  }
+  map.fitBounds(spotLayer.getLayers().map((m) => m.getLatLng()), { padding: [40, 40], maxZoom: 13 });
+}
+
+async function ask(text) {
+  history.push({ role: "user", text });
+  addMsg("msg user", text);
+  const btn = $("chat-send");
+  btn.disabled = true;
+  const wait = addMsg("msg bot", "생각 중...");
+  try {
+    const res = await fetch("/api/agent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: history.slice(-12) }),
+    });
+    let data = {};
+    try { data = await res.json(); } catch { /* JSON 이 아닌 응답 */ }
+    wait.remove();
+    for (const st of data.steps || []) {
+      const args = Object.values(st.args).join(", ");
+      addMsg("tool", `🔧 ${st.tool}(${args}) → ${st.summary}`);
+    }
+    if (!res.ok) throw new Error(data.error || `서버 오류 (${res.status}) — Vercel에 배포된 주소에서만 동작합니다.`);
+    addMsg("msg bot", data.reply || "(답변이 비어 있습니다)");
+    history.push({ role: "model", text: data.reply || "" });
+    showSpots(data.spots || []);
+  } catch (e) {
+    wait.remove();
+    history.pop(); // 실패한 질문은 대화 기록에서 뺀다
+    addMsg("msg err", e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("chat-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = $("chat-input").value.trim();
+  if (!text || $("chat-send").disabled) return;
+  $("chat-input").value = "";
+  ask(text);
+});
+document.querySelectorAll(".ex").forEach((b) =>
+  b.addEventListener("click", () => { if (!$("chat-send").disabled) ask(b.textContent); })
+);
