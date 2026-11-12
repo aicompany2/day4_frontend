@@ -10,6 +10,6 @@
 |---|---|
 | `GEMINI_API_KEY` | Google AI Studio API 키 (필수) |
 | `KAKAO_REST_API_KEY` | 카카오 developers REST API 키 (find_spots 필수) |
-| `GEMINI_MODEL` | 선택. 기본값 `gemini-2.5-flash` |
+| `GEMINI_MODEL` | 선택. 기본값 `gemini-3.8-flash` |
 
 키는 서버 함수에서만 사용되며 브라우저로 노출되지 않습니다. 환경변수를 추가/변경한 뒤에는 재배포해야 적용됩니다.
