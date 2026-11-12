@@ -1,7 +1,7 @@
 // Vercel 서버리스 함수: Gemini 함수 호출(tool calling) 에이전트
 const { declarations, handlers } = require("./_tools");
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const MAX_STEPS = 6; // 도구 호출 왕복 상한
 const MAX_MESSAGES = 20;
 const MAX_CHARS = 2000;
